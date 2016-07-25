@@ -122,6 +122,7 @@ struct NemoIconContainerDetails {
 	/* List of icons. */
 	GList *icons;
 	GList *new_icons;
+	GList *selection;
 	GHashTable *icon_set;
 
 	/* Current icon for keyboard navigation. */
@@ -273,6 +274,7 @@ struct NemoIconContainerDetails {
 
 	eel_boolean_bit is_loading : 1;
 	eel_boolean_bit needs_resort : 1;
+	eel_boolean_bit selection_needs_resort : 1;
 
 	eel_boolean_bit store_layout_timestamps : 1;
 	eel_boolean_bit store_layout_timestamps_when_finishing_new_icons : 1;

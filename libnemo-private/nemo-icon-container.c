@@ -512,6 +512,13 @@ icon_toggle_selected (NemoIconContainer *container,
 	end_renaming_mode (container, TRUE);
 
 	icon->is_selected = !icon->is_selected;
+	if (icon->is_selected) {
+		container->details->selection = g_list_prepend (container->details->selection, icon->data);
+		container->details->selection_needs_resort = TRUE;
+	} else {
+		container->details->selection = g_list_remove (container->details->selection, icon->data);
+	}
+
 	eel_canvas_item_set (EEL_CANVAS_ITEM (icon->item),
 			     "highlighted_for_selection", (gboolean) icon->is_selected,
 			     NULL);
@@ -1189,6 +1196,19 @@ nemo_icon_container_update_scroll_region (NemoIconContainer *container)
 }
 
 static int
+compare_icons_data (gconstpointer a, gconstpointer b, gpointer icon_container)
+{
+	NemoIconContainerClass *klass;
+	NemoIconData *data_a, *data_b;
+
+	data_a = (NemoIconData *) a;
+	data_b = (NemoIconData *) b;
+	klass  = NEMO_ICON_CONTAINER_GET_CLASS (icon_container);
+
+	return klass->compare_icons (icon_container, data_a, data_b);
+}
+
+static int
 compare_icons (gconstpointer a, gconstpointer b, gpointer icon_container)
 {
 	NemoIconContainerClass *klass;
@@ -1199,6 +1219,15 @@ compare_icons (gconstpointer a, gconstpointer b, gpointer icon_container)
 	klass  = NEMO_ICON_CONTAINER_GET_CLASS (icon_container);
 
 	return klass->compare_icons (icon_container, icon_a->data, icon_b->data);
+}
+
+static void
+sort_selection (NemoIconContainer *container)
+{
+	container->details->selection = g_list_sort_with_data (container->details->selection,
+							       compare_icons_data,
+							       container);
+	container->details->selection_needs_resort = FALSE;
 }
 
 static void
@@ -1217,6 +1246,7 @@ static void
 resort (NemoIconContainer *container)
 {
 	sort_icons (container, &container->details->icons);
+	sort_selection (container);
 }
 
 #if 0
@@ -6790,6 +6820,7 @@ icon_destroy (NemoIconContainer *container,
  
 	details->icons = g_list_remove (details->icons, icon);
 	details->new_icons = g_list_remove (details->new_icons, icon);
+	details->selection = g_list_remove (details->selection, icon->data);
 	g_hash_table_remove (details->icon_set, icon->data);
 
 	was_selected = icon->is_selected;
@@ -7599,21 +7630,13 @@ nemo_icon_container_reveal (NemoIconContainer *container, NemoIconData *data)
 GList *
 nemo_icon_container_get_selection (NemoIconContainer *container)
 {
-	GList *list, *p;
-
 	g_return_val_if_fail (NEMO_IS_ICON_CONTAINER (container), NULL);
 
-	list = NULL;
-	for (p = container->details->icons; p != NULL; p = p->next) {
-		NemoIcon *icon;
-
-		icon = p->data;
-		if (icon->is_selected) {
-			list = g_list_prepend (list, icon->data);
-		}
+	if (container->details->selection_needs_resort) {
+		sort_selection (container);
 	}
 
-	return g_list_reverse (list);
+	return g_list_copy (container->details->selection);
 }
 
 static GList *
