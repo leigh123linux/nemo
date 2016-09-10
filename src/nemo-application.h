@@ -95,4 +95,15 @@ void nemo_application_ignore_cache_problem (NemoApplication *application);
 gboolean nemo_application_get_cache_problem_ignored (NemoApplication *application);
 gboolean nemo_application_get_show_desktop (NemoApplication *application);
 
+// SGM 2015
+void sessionmgr_win_close();
+void sessionmgr_save_state();
+void sessionmgr_load_state();
+
+
+
 #endif /* __NEMO_APPLICATION_H__ */
+
+
+
+
