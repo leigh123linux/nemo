@@ -779,6 +779,8 @@ nemo_window_finalize (GObject *object)
 {
 	NemoWindow *window;
 
+	sessionmgr_win_close();   // sgm 2015
+
 	window = NEMO_WINDOW (object);
 
 	if (window->details->sidebar_width_handler_id != 0) {
@@ -797,7 +799,8 @@ nemo_window_finalize (GObject *object)
 
 	/* nemo_window_close() should have run */
 	g_assert (window->details->panes == NULL);
-
+	
+	
 	G_OBJECT_CLASS (nemo_window_parent_class)->finalize (object);
 }
 
@@ -888,6 +891,7 @@ nemo_window_save_geometry (NemoWindow *window)
 			(nemo_window_state, NEMO_WINDOW_STATE_MAXIMIZED,
 			 is_maximized);
 	}
+	sessionmgr_win_close();
 }
 
 void
