@@ -119,6 +119,10 @@ typedef struct {
 	GtkWidget *popup_menu_properties_item;
     GtkWidget *popup_menu_action_separator_item;
     GtkWidget *popup_menu_remove_rename_separator_item;
+#if GTK_CHECK_VERSION (3, 24, 8)
+    guint      popup_menu_event_mask_id;
+    guint      popup_menu_idle_id;
+#endif
 
     NemoFile *popup_file;
     guint popup_file_idle_handler;
@@ -3553,21 +3557,126 @@ bookmarks_update_popup_menu (NemoPlacesSidebar *sidebar)
 	bookmarks_build_popup_menu (sidebar);
 }
 
+#if GTK_CHECK_VERSION (3, 24, 8)
+/* gtkmenushell.c */
+#define MENU_SHELL_TIMEOUT   500
+#define MENU_PADDING_POSITION_OFFSET 10
+#define MENU_PADDING_SIZE_OFFSET 20
+
+static gboolean
+pointer_in_menu_window (GtkWidget *widget,
+                        gdouble    x_root,
+                        gdouble    y_root)
+{
+  GtkAllocation allocation;
+
+  if (gtk_widget_get_mapped (widget)) {
+      gint window_x, window_y;
+
+      gdk_window_get_position (gdk_window_get_toplevel (gtk_widget_get_window (widget)),
+                               &window_x, &window_y);
+
+      gtk_widget_get_allocation (widget, &allocation);
+
+      if (x_root >= window_x + MENU_PADDING_POSITION_OFFSET && x_root < window_x + allocation.width - MENU_PADDING_SIZE_OFFSET &&
+          y_root >= window_y + MENU_PADDING_POSITION_OFFSET && y_root < window_y + allocation.height - MENU_PADDING_SIZE_OFFSET)
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
+static gboolean
+menu_button_release_event_mask (GtkWidget *widget,
+                                GdkEvent  *event,
+                                gpointer   user_data)
+{
+    if (pointer_in_menu_window (widget, event->button.x_root, event->button.y_root)) {
+        return GDK_EVENT_PROPAGATE;
+    }
+
+    return GDK_EVENT_STOP;
+}
+
+static gboolean
+menu_button_release_event_mask_timeout_cb (NemoPlacesSidebar *sidebar)
+{
+    g_signal_handlers_disconnect_by_func (sidebar->popup_menu, menu_button_release_event_mask, sidebar);
+
+    sidebar->popup_menu_event_mask_id = 0;
+    return FALSE;
+}
+
+static gboolean
+popup_menu_later_cb (NemoPlacesSidebar *sidebar)
+{
+    g_signal_connect (sidebar->popup_menu,
+                      "button-release-event",
+                      G_CALLBACK (menu_button_release_event_mask),
+                      sidebar);
+
+    eel_pop_up_context_menu (GTK_MENU (sidebar->popup_menu),
+                             NULL);
+
+    sidebar->popup_menu_event_mask_id = g_timeout_add (MENU_SHELL_TIMEOUT,
+                                                       (GSourceFunc) menu_button_release_event_mask_timeout_cb,
+                                                       sidebar);
+
+    sidebar->popup_menu_idle_id = 0;
+    return FALSE;
+}
+#endif
+
 static void
+#if GTK_CHECK_VERSION (3, 24, 8)
+bookmarks_popup_menu (NemoPlacesSidebar *sidebar)
+{
+	bookmarks_update_popup_menu (sidebar);
+#else
 bookmarks_popup_menu (NemoPlacesSidebar *sidebar,
 		      GdkEventButton        *event)
 {
 	bookmarks_update_popup_menu (sidebar);
 	eel_pop_up_context_menu (GTK_MENU(sidebar->popup_menu),
 				 event);
+#endif
+
+#if GTK_CHECK_VERSION (3, 24, 8)
+#if GLIB_CHECK_VERSION (2, 56, 0)
+    g_clear_handle_id (&sidebar->popup_menu_event_mask_id,
+                       g_source_remove);
+    g_clear_handle_id (&sidebar->popup_menu_idle_id,
+                       g_source_remove);
+#else
+    if (sidebar->popup_menu_event_mask_id > 0) {
+        g_source_remove (sidebar->popup_menu_event_mask_id);
+
+        sidebar->popup_menu_event_mask_id = 0;
+    }
+    if (sidebar->popup_menu_idle_id > 0) {
+        g_source_remove (sidebar->popup_menu_idle_id);
+
+        sidebar->popup_menu_idle_id = 0;
+    }
+#endif
+
+    sidebar->popup_menu_idle_id = g_idle_add_full (G_PRIORITY_HIGH_IDLE + 30,
+                                                   (GSourceFunc) popup_menu_later_cb,
+                                                   sidebar,
+                                                   NULL);
 }
+#endif
 
 /* Callback used for the GtkWidget::popup-menu signal of the shortcuts list */
 static gboolean
 bookmarks_popup_menu_cb (GtkWidget *widget,
 			 NemoPlacesSidebar *sidebar)
 {
+#if GTK_CHECK_VERSION (3, 24, 8)
+	bookmarks_popup_menu (sidebar);
+#else
 	bookmarks_popup_menu (sidebar, NULL);
+#endif
 	return TRUE;
 }
 
@@ -3662,7 +3771,11 @@ bookmarks_button_press_event_cb (GtkWidget             *widget,
 				    -1);
 
 		if (row_type != PLACES_HEADING) {
+#if GTK_CHECK_VERSION (3, 24, 8)
+			bookmarks_popup_menu (sidebar);
+#else
 			bookmarks_popup_menu (sidebar, event);
+#endif
 		}
 	} else if (event->button == 2) {
 		NemoWindowOpenFlags flags = 0;
@@ -4258,6 +4371,25 @@ nemo_places_sidebar_dispose (GObject *object)
         g_source_remove (sidebar->update_places_on_idle_id);
         sidebar->update_places_on_idle_id = 0;
     }
+
+#if GTK_CHECK_VERSION (3, 24, 8)
+#if GLIB_CHECK_VERSION (2, 56, 0)
+    g_clear_handle_id (&sidebar->popup_menu_event_mask_id,
+                       g_source_remove);
+    g_clear_handle_id (&sidebar->popup_menu_idle_id,
+                       g_source_remove);
+
+#else
+    if (sidebar->popup_menu_event_mask_id > 0) {
+        g_source_remove (sidebar->popup_menu_event_mask_id);
+        sidebar->popup_menu_event_mask_id = 0;
+    }
+    if (sidebar->popup_menu_idle_id > 0) {
+        g_source_remove (sidebar->popup_menu_idle_id);
+        sidebar->popup_menu_idle_id = 0;
+    }
+#endif
+#endif
 
 	g_clear_object (&sidebar->store);
 
